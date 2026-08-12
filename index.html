@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07101f">
+<title>Wick AI Analyzer V5 Smart</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07101f;color:#eaf2ff;font-family:Arial,sans-serif}
+header{padding:18px 16px;background:#0b1630;position:sticky;top:0;z-index:2}
+h1{font-size:23px;margin:0 0 6px}.sub{color:#9db0cb;font-size:13px}
+main{padding:14px;max-width:850px;margin:auto}.bar,.card{background:#101d35;border:1px solid #203252;border-radius:18px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:135px}
+select,button{width:100%;padding:13px;border-radius:12px;border:1px solid #2d456d;background:#142541;color:#fff;font-weight:700}
+button{background:#2563eb;border:0}.stop{background:#334155}
+.status{padding:11px;border-radius:12px;margin-top:10px;font-weight:700}.ok{background:#073b2b;color:#75f0bd}.warn{background:#493707;color:#ffd76a}.bad{background:#4a1519;color:#ff9298}
+.signal{text-align:center;padding:22px;border-radius:20px;font-size:42px;font-weight:900;margin-bottom:12px}
+.call{background:#063d2a;color:#62f3a6}.put{background:#4a1519;color:#ff8d93}.wait{background:#493707;color:#ffd76a}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.metric{background:#17243d;border-radius:13px;padding:12px}.metric b{display:block;font-size:20px;margin-top:5px}.small{font-size:12px;color:#9db0cb}
+.pct{height:14px;background:#263650;border-radius:20px;overflow:hidden;margin:7px 0}.pct i{display:block;height:100%;background:#31c48d}.pct.putbar i{background:#ef5b65}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px;border-bottom:1px solid #253653;text-align:left}th{color:#9db0cb}
+.log{max-height:150px;overflow:auto;font:12px monospace;color:#a9b8cf;white-space:pre-wrap}
+.notice{font-size:12px;line-height:1.45;color:#a9b8cf}.highlight{color:#fff;font-weight:800}
+@media(max-width:500px){.grid{grid-template-columns:1fr 1fr}.signal{font-size:35px}}
+</style>
+</head>
+<body>
+<header>
+<h1>Wick AI Analyzer — V5 SMART</h1>
+<div class="sub">Flux temps réel • confluence • prochaine bougie • reconnexion automatique</div>
+</header>
+<main>
+<div class="bar">
+<div class="row">
+<select id="symbol">
+<option value="btcusdt">BTC/USDT</option><option value="ethusdt">ETH/USDT</option>
+<option value="bnbusdt">BNB/USDT</option><option value="solusdt">SOL/USDT</option>
+<option value="xrpusdt">XRP/USDT</option><option value="adausdt">ADA/USDT</option>
+<option value="dogeusdt">DOGE/USDT</option><option value="avaxusdt">AVAX/USDT</option>
+<option value="linkusdt">LINK/USDT</option><option value="dotusdt">DOT/USDT</option>
+</select>
+<select id="tf"><option value="1m">1 minute</option><option value="3m">3 minutes</option><option value="5m">5 minutes</option></select>
+</div>
+<div class="row" style="margin-top:10px"><button onclick="start()">DÉMARRER V5</button><button class="stop" onclick="stop()">ARRÊTER</button></div>
+<div id="status" class="status warn">🟡 Prêt — appuyer sur DÉMARRER</div>
+</div>
+
+<div id="signal" class="signal wait">ATTENDRE</div>
+
+<div class="card">
+<div class="grid">
+<div class="metric">Marché<b id="mkt">—</b><span class="small" id="age">—</span></div>
+<div class="metric">Prix<b id="price">—</b><span class="small">dernier prix reçu</span></div>
+<div class="metric">Tendance<b id="trend">—</b></div>
+<div class="metric">Bougie suivante<b id="next">—</b></div>
+</div>
+</div>
+
+<div class="card">
+<h3>Probabilités internes</h3>
+<div>CALL <b id="callp">—</b><div class="pct"><i id="callbar" style="width:50%"></i></div></div>
+<div>PUT <b id="putp">—</b><div class="pct putbar"><i id="putbar" style="width:50%"></i></div></div>
+<div class="grid">
+<div class="metric">Confiance<b id="conf">—</b></div>
+<div class="metric">Score<b id="score">—</b></div>
+</div>
+</div>
+
+<div class="card">
+<h3>Pourquoi ?</h3>
+<table><tbody id="facts"></tbody></table>
+</div>
+
+<div class="card">
+<h3>⏱ Pré-alerte</h3>
+<div id="alert" class="highlight">Aucune pré-alerte active.</div>
+<div class="small">La pré-alerte se déclenche dans les dernières secondes de la bougie. Elle ne prédit pas le futur : elle signale uniquement l'état actuel des données reçues.</div>
+</div>
+
+<div class="card">
+<h3>Journal de connexion</h3><div id="log" class="log"></div>
+</div>
+
+<div class="card notice">
+<b>Important :</b> V5 analyse les données de marché crypto reçues en temps réel. Les pourcentages sont des scores statistiques internes, pas des probabilités garanties de réussite. Une bougie future ne peut pas être connue avec certitude. Cette version n'utilise pas les cotations OTC de Pocket Option.
+</div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let ws=null, timer=null, reconnectTimer=null, running=false, backoff=1000, candles=[], lastMsg=0;
+const MAX=300;
+
+function log(s){$("log").textContent=("["+new Date().toLocaleTimeString()+"] "+s+"\\n"+$("log").textContent).slice(0,6000)}
+function setStatus(text,cls){$("status").className="status "+cls;$("status").textContent=text}
+function sma(a,n){if(a.length<n)return null;let x=a.slice(-n);return x.reduce((s,v)=>s+v,0)/n}
+function ema(a,n){if(a.length<n)return null;let e=sma(a.slice(0,n),n), k=2/(n+1);for(let i=n;i<a.length;i++)e=a[i]*k+e*(1-k);return e}
+function rsi(a,n=14){if(a.length<n+1)return null;let g=0,l=0;for(let i=a.length-n;i<a.length;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;let rs=(g/n)/(l/n);return 100-100/(1+rs)}
+function atr(cs,n=14){if(cs.length<n+1)return null;let tr=[];for(let i=1;i<cs.length;i++){let c=cs[i],p=cs[i-1];tr.push(Math.max(c.h-c.l,Math.abs(c.h-p.c),Math.abs(c.l-p.c)))}return sma(tr,n)}
+function stoch(cs,n=14){if(cs.length<n)return null;let x=cs.slice(-n), hi=Math.max(...x.map(c=>c.h)),lo=Math.min(...x.map(c=>c.l));return hi===lo?50:(x.at(-1).c-lo)/(hi-lo)*100}
+function macd(a){if(a.length<35)return null;let m=[];for(let i=0;i<a.length;i++){let e12=ema(a.slice(0,i+1),12),e26=ema(a.slice(0,i+1),26);if(e12!=null&&e26!=null)m.push(e12-e26)}return m.length<2?null:m.at(-1)-m.at(-2)}
+function boll(cs,n=20){if(cs.length<n)return null;let a=cs.slice(-n).map(x=>x.c),m=sma(a,n),sd=Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/n);return {mid:m,up:m+2*sd,lo:m-2*sd}}
+function candleScore(c){let range=Math.max(c.h-c.l,1e-12),body=Math.abs(c.c-c.o),upper=c.h-Math.max(c.o,c.c),lower=Math.min(c.o,c.c)-c.l;let s=0;if(c.c>c.o)s+=1;else if(c.c<c.o)s-=1;if(lower>body*1.5)s+=1;if(upper>body*1.5)s-=1;return s}
+function analyze(){
+ if(candles.length<55)return;
+ const a=candles.map(c=>c.c), c=candles.at(-1), e9=ema(a,9),e21=ema(a,21),e50=ema(a,50),R=rsi(a),S=stoch(candles),M=macd(a),B=boll(candles),A=atr(candles);
+ let trend=0,mom=0,reversal=0, cs=0;
+ if(e9&&e21){trend += e9>e21?2:-2;if(e21>e50)trend+=2;else trend-=2}
+ if(R!=null)mom += R>55?1:R<45?-1:0;
+ if(M!=null)mom += M>0?1:-1;
+ if(S!=null)mom += S>55?1:S<45?-1:0;
+ if(B){if(c.c>B.up)reversal-=1;else if(c.c<B.lo)reversal+=1}
+ cs=candleScore(c);
+ let raw=trend*0.45+mom*1.1+reversal*0.7+cs*0.6;
+ let pCall=Math.max(1,Math.min(99,50+raw*8)),pPut=100-pCall;
+ let confidence=Math.min(98,50+Math.abs(pCall-50)*1.35);
+ let conflict=(trend>1&&mom<-1)||(trend<-1&&mom>1);
+ let decision=confidence<58||conflict?"ATTENDRE":pCall>pPut?"CALL":"PUT";
+ $("signal").textContent=decision;
+ $("signal").className="signal "+(decision==="CALL"?"call":decision==="PUT"?"put":"wait");
+ $("mkt").textContent=$("symbol").value.toUpperCase();
+ $("price").textContent=c.c.toFixed(2);
+ $("trend").textContent=trend>1?"HAUSSIÈRE":trend<-1?"BAISSIÈRE":"NEUTRE";
+ $("next").textContent=pCall>pPut?`CALL ${pCall.toFixed(0)}%`:`PUT ${pPut.toFixed(0)}%`;
+ $("callp").textContent=pCall.toFixed(1)+"%";$("putp").textContent=pPut.toFixed(1)+"%";
+ $("callbar").style.width=pCall+"%";$("putbar").style.width=pPut+"%";
+ $("conf").textContent=confidence.toFixed(1)+"%";$("score").textContent=raw.toFixed(2);
+ $("facts").innerHTML=[
+ ["EMA 9/21",e9&&e21?(e9>e21?"haussière":"baissière"):"—"],
+ ["RSI 14",R==null?"—":R.toFixed(1)],
+ ["MACD",M==null?"—":(M>0?"haussier":"baissier")],
+ ["Stoch %K",S==null?"—":S.toFixed(1)],
+ ["Bollinger",B?(c.c>B.up?"au-dessus bande haute":c.c<B.lo?"sous bande basse":"dans le canal"):"—"],
+ ["Bougie",cs>0?"pression CALL":cs<0?"pression PUT":"neutre"],
+ ["Conflit",conflict?"OUI → prudence":"NON"]
+].map(x=>`<tr><td>${x[0]}</td><td><b>${x[1]}</b></td></tr>`).join("");
+ const close=c.t+c.dur;
+ const sec=Math.max(0,(close-Date.now())/1000);
+ $("age").textContent=`clôture dans ${sec.toFixed(0)} s`;
+ if(sec<=7&&sec>0&&decision!=="ATTENDRE")$("alert").textContent=`⚡ PRÉ-ALERTE ${decision} • ${sec.toFixed(1)} s avant clôture`;
+ else $("alert").textContent="Aucune pré-alerte active.";
+}
+function handleKline(k){
+ const x={t:k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c,dur:k.T-k.t+1};
+ if(candles.length&&candles.at(-1).t===x.t)candles[candles.length-1]=x;else candles.push(x);
+ if(candles.length>MAX)candles.shift();
+ lastMsg=Date.now(); $("status").textContent=`🟢 FLUX LIVE • ${$("symbol").value.toUpperCase()} • dernière donnée ${new Date().toLocaleTimeString()}`;
+ analyze();
+}
+function connect(){
+ if(!running)return;
+ clearTimeout(reconnectTimer);
+ const s=$("symbol").value.toLowerCase(), tf=$("tf").value;
+ const url=`wss://stream.binance.com:9443/ws/${s}@kline_${tf}`;
+ setStatus("🟡 Connexion au flux…","warn");log("Connexion → "+url);
+ try{ws=new WebSocket(url)}catch(e){scheduleReconnect();return}
+ ws.onopen=()=>{backoff=1000;setStatus("🟢 FLUX LIVE — CONNECTÉ","ok");log("Connexion OK")};
+ ws.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.k)handleKline(d.k)}catch(err){log("Message invalide")}};
+ ws.onerror=()=>{setStatus("🔴 Erreur WebSocket — reconnexion…","bad");log("Erreur WebSocket")};
+ ws.onclose=()=>{log("Flux fermé");if(running)scheduleReconnect()};
+}
+function scheduleReconnect(){
+ if(!running)return;
+ setStatus(`🟡 RECONNEXION dans ${(backoff/1000).toFixed(1)} s…`,"warn");
+ reconnectTimer=setTimeout(()=>{connect();backoff=Math.min(backoff*2,30000)},backoff);
+}
+function start(){
+ stop(false);running=true;candles=[];backoff=1000;connect();
+ timer=setInterval(()=>{if(lastMsg&&Date.now()-lastMsg>10000&&running){log("Silence >10s → reconnexion");try{ws&&ws.close()}catch(e){}}analyze()},500);
+}
+function stop(clear=true){
+ running=false;clearTimeout(reconnectTimer);if(ws){try{ws.close()}catch(e){}}ws=null;
+ if(timer){clearInterval(timer);timer=null}
+ if(clear){setStatus("🟡 Flux arrêté","warn");$("alert").textContent="Aucune pré-alerte active.";log("Flux arrêté")}
+}
+$("symbol").onchange=()=>{if(running)start()};$("tf").onchange=()=>{if(running)start()};
+</script>
+</body>
+</html>
