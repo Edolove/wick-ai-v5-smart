@@ -1,7 +1,7 @@
 {
-  "name": "Wick AI Analyzer V5 Smart",
-  "short_name": "WickAI V5",
-  "start_url": "./",
+  "name": "Wick AI Analyzer V5.1",
+  "short_name": "WickAI V5.1",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#07101f",
   "theme_color": "#111827",
