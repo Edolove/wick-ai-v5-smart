@@ -1,8 +1,1 @@
-{
-  "name": "Wick AI Analyzer V5.3",
-  "short_name": "WickAI V5.3",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#07101f",
-  "theme_color": "#111827"
-}
+{"name":"Wick AI Analyzer V5.3","short_name":"WickAI V5.3","start_url":".","display":"standalone","background_color":"#07101f","theme_color":"#111827"}
